@@ -1,8 +1,5 @@
 library(tidyverse)
 library(nflreadr) 
-library(brms)
-library(lme4)  
-options(brms.backend = "cmdstanr") 
 
 # read nfl data from previous project 
 data = read_csv("nfl_seasonal_data/standings.csv") 

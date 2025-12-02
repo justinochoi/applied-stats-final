@@ -1,0 +1,24 @@
+---
+title: "NFL Win Projections: Bigger and Better"
+subtitle: "December 4th, 2025"
+author: "Justin Choi, Tengis Kelley, Heidi Tamm" 
+output: pdf_document 
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+# 1. Introduction 
+
+In the first project of the semester, we attempted to predict NFL win totals for each team using historical indicators of strength, such as previous point differential and strength of schedule. This approach yielded reasonable results, but there was much room for improvement. Notably, we failed to incorporate the actions teams take during a typical offseason to bolster their roster. In this updated version of that project, we focus on (1) **free agent signings** and (2) **amateur draft picks**. Both methods of acquiring players can dramatically elevate the outlook of teams. Marquee free agents are potentially worth multiple wins on their own, while amateur players, particularly those selected in the first round of the NFL draft, are superstars in the making.
+
+We first discuss how we collected necessary data. We then show that knowing which free agents and amateur players a team signs during an offseason provides more accurate predictions about their next-season win total. We conclude with a summary of our findings and avenues for future research. 
+
+# 2. Data Collection 
+
+# 3. Modeling 
+
+# 4. Results
+
+# 5. Conclusion / Limitations 
+

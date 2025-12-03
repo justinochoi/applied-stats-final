@@ -16,6 +16,7 @@ summary(baseline)
 base_prob = predict(baseline, test, type = "response") 
 base_wins = 17 * base_prob 
 mean(abs(test$W - base_wins)) # 2.83 
+sqrt(mean((test$W - base_wins)^2)) # 3.4 
 
 # adding signing data 
 sign_lmer = glmer(
@@ -31,59 +32,9 @@ anova(baseline, sign_lmer)
 sign_prob = predict(sign_lmer, test, type = "response") 
 sign_wins = 17 * sign_prob
 mean(abs(test$W - sign_wins)) # 2.79 - baseline defeated! 
+sqrt(mean((test$W - sign_wins)^2)) # 3.46 - but RMSE is worse 
 
-
-# let's try out a mixture of two binomials 
-mix = mixture(binomial, binomial)
-mix_prior = get_prior(
-  bf(
-    W | trials(G) ~ 1, 
-    mu1 ~ max_apy + pick + category + prior_PD + (1 | Tm), 
-    mu2 ~ max_apy + pick + category + prior_PD + (1 | Tm), 
-    theta1 = 1, theta2 = 2 
-  ), 
-  data = train, family = mix
-)
-
-mix_prior = mix_prior %>% 
-  mutate(
-    prior = case_when(
-      class == 'Intercept' & dpar == 'mu1' ~ 'normal(-1, 0.5)', 
-      class == 'Intercept' & dpar == 'mu2' ~ 'normal(1, 0.5)', 
-      class == 'b' ~ 'normal(0, 2)', 
-      class == 'sd' ~ 'exponential(1)', 
-      class == 'phi1' ~ 'exponential(0.1)', 
-      class == 'phi2' ~ 'exponential(0.1)'
-    )
-  )
-
-# because we're using a logit link function 
-# mu = -1 assumes winning pct. of around 27% (tanking teams)
-# mu = 0 assumes winning pct. of around 50% (regular teams)
-# assume that about 1/3 teams tank and 2/3 teams try to be competitive 
-# this corresponds to theta1 = 1, theta2 = 2 
-
-fit_mix = brm(
-  bf(
-    W | trials(G) ~ 1, 
-    mu1 ~ max_apy + pick + category + prior_PD + (1 | Tm), 
-    mu2 ~ max_apy + pick + category + prior_PD + (1 | Tm), 
-    theta1 = 1, theta2 = 2 
-  ), 
-  data = train, family = mix, 
-  prior = mix_prior, 
-  cores = 4, chains = 4, 
-  warmup = 1000, iter = 3000, seed = 76,
-  control = list(adapt_delta = 0.95, max_treedepth = 15)
-)
-
-summary(fit_mix) 
-pp_check(fit_mix, ndraws=200)
-
-mix_wins = colMeans(posterior_epred(fit_mix, newdata = test))
-mean(abs(test$W - mix_wins)) # 2.96 - overfitting 
-
-# no mixture, but beta binomial family 
+# beta-binomial using brms  
 bb_prior = get_prior(
   bf(
     W | trials(G) ~ prior_PD + category + pick + max_apy + (1 | Tm)
@@ -95,51 +46,80 @@ bb_prior = bb_prior %>%
   mutate(
     prior = case_when(
       class == 'b' ~ 'normal(0,2)', 
-      class == 'Intercept' ~ 'normal(1, 0.5)', 
+      class == 'Intercept' ~ 'normal(0, 0.5)', 
       class == 'sd' ~ 'exponential(1)', 
       class == 'phi' ~ 'exponential(0.1)'
     )
   )
 
-fit_bb = brm(
-  bf(
-    W | trials(G) ~ prior_PD + category + pick + max_apy + (1 | Tm) 
-  ), 
-  data = train, family = beta_binomial, 
-  prior = bb_prior, 
-  cores = 4, chains = 4, 
-  warmup = 1000, iter = 2500, seed = 76,
-  control = list(adapt_delta = 0.95, max_treedepth = 15)
-)
+# WARNING: do not run this model by yourself!! it will take ~ 20 minutes to evalute 
+# instead load the saved model directly: 
+fit_bb = readRDS("beta_binomial_mod.rds") 
+
+#fit_bb = brm(
+#  bf(
+#    W | trials(G) ~ prior_PD + category + pick + max_apy + (1 | Tm) 
+#  ), 
+#  data = train, family = beta_binomial, 
+#  prior = bb_prior, 
+#  cores = 4, chains = 4, 
+#  warmup = 1000, iter = 2500, seed = 76,
+#  control = list(adapt_delta = 0.95, max_treedepth = 15)
+#)
 
 summary(fit_bb) 
 pp_check(fit_bb, ndraws=200) 
 
 bb_wins = colMeans(posterior_epred(fit_bb, newdata = test))
 mean(abs(test$W - bb_wins)) # 2.69! best one yet 
+sqrt(mean((test$W - bb_wins)^2)) # 3.43 - very slightly worse than baseline but closest 
+cor(test$W, bb_wins) # 0.377 
 
-# plotting the predictions 
-results = tibble(
+# hail mary: gaussian process for modeling varying team strength over time 
+gp_prior = get_prior(
+  bf(
+    W | trials(G) ~ gp(year, by = Tm, k = 5) + (1 | Tm)
+  ), 
+  data = train, family = binomial 
+)
+
+gp_prior = gp_prior %>% 
+  mutate(
+    prior = case_when(
+      class == 'b' ~ 'normal(0,2)', 
+      class == 'Intercept' ~ 'normal(0, 0.5)', 
+      class == 'sd' ~ 'exponential(1)', 
+      TRUE ~ prior
+    )
+  )
+
+fit_gp = brm(
+  bf(
+    W | trials(G) ~ gp(year, by = Tm, k = 5) + (1 | Tm)
+  ), 
+  data = train, family = binomial, 
+  prior = gp_prior, 
+  cores = 4, chains = 4, 
+  warmup = 1000, iter = 2500, seed = 76,
+  control = list(adapt_delta = 0.95, max_treedepth = 15)
+)
+
+summary(fit_gp)
+pp_check(fit_gp, ndraws = 200)
+
+# the GP model needs past data as well 
+gp_wins_all = colMeans(posterior_epred(fit_gp, newdata = bind_rows(train, test)))
+# these are the predictions for 2024 
+gp_wins = gp_wins_all[257:288]
+mean(abs(test$W - gp_wins)) # 2.74 
+sqrt(mean((test$W - gp_wins)^2)) # 3.25! - this is actual the best model 
+
+gp_results = tibble(
   team = test$Tm, 
-  preds = bb_wins, 
-  actual = test$W 
-) 
+  preds = gp_wins[257:288], 
+  actual = test$W
+)
 
-plot(base_wins, test$W)
-cor(sign_wins, test$W) 
-cor(mix_wins, test$W) 
-cor(results$preds, results$actual)
-
-sqrt(mean((base_wins - test$W)^2))
-sqrt(mean((sign_wins - test$W)^2)) 
-sqrt(mean((bb_wins - test$W)^2))
-
-# one of the biggest misses is the tennessee titans 
-# they signed calvin ridley to 4 yr, $92 mil deal 
-
-ggplot(results, aes(x=preds, y=actual)) + 
+ggplot(gp_results, aes(x=preds, y=actual)) + 
   geom_point() + 
-  geom_abline(slope = 1, linetype = "dashed", color = "red") + 
-  coord_fixed() 
-
-saveRDS(fit_bb, "beta_binomial_mod.rds") 
+  geom_abline(slope = 1, linetype = "dashed", color = "red")

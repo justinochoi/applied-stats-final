@@ -18,7 +18,102 @@ We first discuss how we collected necessary data. We then show that knowing whic
 
 # 3. Modeling 
 
+# 3.1 Baseline Model 
+
+$$
+\begin{aligned}
+W_i &\sim \text{Binomial}(G_i, p_i) \\
+\text{logit}(\mu_i) &= \beta_0 + \beta_1 \cdot \text{PD_past_1}_i + u_{Tm[i]} \\
+u_{\text{Tm}[i]} &\sim \mathcal{N}(0, \sigma^2) \\
+\end{aligned}
+$$
+
+# 3.2 Adding New Information 
+
+$$
+\begin{aligned}
+W_i &\sim \text{Binomial}(G_i, p_i) \\
+\text{logit}(\mu_i) &= \beta_0 + \beta_1 \cdot \text{PD_past_1}_i + \beta_2 \cdot \text{max_apy}_i 
++ \beta_3 \cdot \text{pick}_i + \sum_{j=1}^{J} \beta_j \cdot \text{position}_{ij} + u_{Tm[i]} \\
+u_{\text{Tm}[i]} &\sim \mathcal{N}(0, \sigma^2) \\
+\end{aligned}
+$$
+
+
+# 3.3 Bayesian Beta-Binomial 
+$$
+\begin{aligned}
+W_i &\sim \text{Beta-Binomial}(G_i, p_i, \phi) \\
+\text{logit}(\mu_i) &= \beta_0 + \beta_1 \cdot \text{PD_past_1}_i + \beta_2 \cdot \text{max_apy}_i 
++ \beta_3 \cdot \text{pick}_i + \sum_{j=1}^{J} \beta_j \cdot \text{position}_{ij} + u_{Tm[i]} \\
+u_{\text{Tm}[i]} &\sim \mathcal{N}(0, \sigma^2) \\
+\phi &\sim \text{Exponential}(0.1) \\
+\beta_0 &\sim \mathcal{N}(0, 0.25) \\
+\beta_1 &\sim \mathcal{N}(0, 4) \\
+\sigma &\sim \text{Exponential}(1)
+\end{aligned}
+$$
+
+# 3.4 Gaussian Process Regression 
+
+$$
+\begin{aligned}
+W_i &\sim \text{Binomial}(G_i, p_i), \\[4pt]
+\text{logit}(p_i) &= \beta_0 + g_{\text{Tm}_i}(\text{year}_t) + u_{\text{Tm}[i]}, \\[6pt]
+\beta_0 &\sim \mathcal{N}(0, 0.25), \\[6pt]
+g_t(\cdot) &\sim \text{GP}\!\left(0, \, k_t(\cdot,\cdot)\right), \\[6pt]
+u_{\text{Tm}[i]} &\sim \mathcal{N}(0, \sigma^2), \\[6pt]
+\sigma &\sim \text{Exponential}(1).
+\end{aligned}
+$$
+
+Now it's time to put our new data to the test. We will train models on NFL regular-season data from 2016-23, in an attempt to predict 2024 NFL regular-seasons wins for each team.
+
+We wanted to start off my establishing a **baseline** model, a starting point from which we can improve on. We'll use the model that returned the best predictions from our previous report: a simple binomial model with three terms: an intercept, the previous season's point differential, and a team random effect. The model was specified using the lme4 R package: 
+
+```{r, eval=FALSE}
+baseline = glmer(
+  cbind(W, L) ~ prior_PD + (1 | Tm), 
+  data = train, family = binomial(link = "logit")
+)
+```
+
+A summary of the model is provided below: 
+
+```{r}
+summary(baseline)
+```
+
+The intercept term is 0, which makes sense - on a logit scale, this corresponds to a team with a .500 winning percentage. When a team allows as many points as it gains, we should expect it to be roughly average. Past year's point differential has a significant effect on a team's winning percentage: If a team had a large point differential in the past, it's more likely to be successful in the future as well (and vice-versa). 
+
+But how well does the model do? It's time to predict on unseen 2024 data and establish a baseline. For our error metric, we'll use both Mean Absolute Error (MAE) and Root Mean Square Error (RMSE). 
+
+```{r}
+base_prob = predict(baseline, test, type = "response") 
+base_wins = 17 * base_prob 
+mean(abs(test$W - base_wins)) # 2.83 
+sqrt(mean((test$W - base_wins)^2)) # 3.4 
+```
+
+The results are pretty decent - on average, we're around 3 wins away from the true 2024 win totals. The RMSE is slightly higher than the MAE, in part because the 2024 NFL season seemed to feature a good number of unexpected outcomes (for example, the Washington Commanders going from a 4-13 record in 2023 to a 12-5 record in 2024). 
+
+Next, we'll keep the same model structure, but add our free agent and draft-related covariates: 
+
+```{r}
+sign_lmer = glmer(
+  cbind(W, L) ~ max_apy + prior_PD + pick + category + (1 | Tm), 
+  data = train, family = binomial(link = "logit")
+)
+summary(sign_lmer) 
+```
+
+As expected, a higher max_apy corresponds to a greater win probability the following season. Prior point differential largely maintains its influence, while surprisingly, the draft pick number is almost completely uninformative. Also surprising is first-round running backs (categoryRB) giving their new teams a noticeable boost to their win totals, but other positions not contributing much. Before running the model, we expected the quarterback position to have a similar impact. Perhaps there are far more rookie quarterbacks who flame out than dominate the league a là Tom Brady or Patrick Mahomes. 
+
 # 4. Results
+
+# 4.1 Model Summaries and Diagnostics 
+
+# 4.2 Predictive Capability 
 
 # 5. Conclusion / Limitations 
 

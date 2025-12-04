@@ -1,0 +1,15 @@
+---
+title: "NFL Win Projections: Bigger and Better"
+subtitle: "December 4th, 2025"
+author: "Justin Choi, Tengis Kelley, Heidi Tamm" 
+output: pdf_document 
+---
+
+# Data Collection
+
+
+
+![Distribution of Draft Pick Positions](firstRound_draftPick_counts_by_position.png){width="80%"}
+
+
+![Distribution of Free Agent Contract Value](distn_total_avgContractValue.png){width="80%"}

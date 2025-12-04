@@ -7,9 +7,56 @@ output: pdf_document
 
 # Data Collection
 
+Similar to our first attempt at this project, the majority of historical head-to-head data comes from the website: `https://www.pro-football-reference.com/years/`. This base data set containing season-level statistics for each team was compiled into `standings.csv`.
 
+To ensure consistency across our data sources, historical team name changes were standardized to their current franchise's name, and all team identifiers were converted to league-standard abbreviations following the `nflreadr` package's convention.
+
+Lagged predictors (prior-year wins, losses, point differential, & strength of schedule) were constructed by matching each team with its results from the previous season. This allowed the data set to capture time dependence & performance persistence across seasons.
+
+**Note:** Only seasons from 2016 onward were retained, as prior-year metrics were unavailable for earlier years as the original data only goes back to 2015.
+
+However as noted before, we wanted to also capture what actions teams take in the off season to improve their rosters. These free agent trades and draft picks can have a huge impact on a team's potential for that upcoming season. Contract information was obtained directly from the `nflreadr` database, where all free-agent contracts from 2016-2024 were retrieved & standardized by team abbreviation.
+
+Roster data for the same time period were then collected to identify free-agent signings indirectly using roster turnover. For each season pair (e.g., 2020 → 2021), players who appeared on a team’s roster in the new season but not the prior season were classified as new additions.
+
+This process identifies external player acquisitions rather than internal roster continuity.
+
+Contracts for those new players were then matched by player ID and team using an inner join, ensuring each detected signing had a verified contract record.
+
+Once individual signings were identified, the data were aggregated to the team–season level:
+
+`total_apy`: total contract spending by a team in a given year `max_apy`: the largest single contract signed by a team that year
+
+For each team-season, the earliest draft pick (lowest pick number) was extracted to capture each team’s highest-value selection, which acts as a proxy for draft capital.
+
+From this subset, the following attributes were retained:
+
+-   Draft pick number
+-   Player position
+-   Positional category (e.g., offense, defense)
+-   Player age
+
+Each team-year therefore contributes exactly one first-round representative player, which was later used for exploratory analysis and modeling. All joins were performed using left joins, ensuring that the core performance data remained the structural backbone of the data set.
+
+The resulting data set for modeling contains the following:
+
+-   Outcome variables: Wins, losses
+-   Historical performance: Prior point differential
+-   Contract data: Total spending and maximum contract value
+-   Draft features: Pick number and player category
+
+Continuous variables were standardized (mean-centered and scaled) for numerical stability, and draft categories were encoded as categorical factors.
+
+The data set was then split into:
+
+Training set: 2016–2023
+
+Testing set: 2024
+
+It was also interesting to explore early hypotheses, such as whether certain positions are more popular in the first pick draft class. The following plot revealed that wide receivers and quarterbacks are the most frequent positions selected in the first round, uncovering potential prioritization strategy trends.
 
 ![Distribution of Draft Pick Positions](firstRound_draftPick_counts_by_position.png){width="80%"}
 
+Another idea we wanted to explore was if spending more capital on expensive free agents as a team translates into better win probabilities. This histogram of team-level total spending shows a lot of right skew present, indicating that only a small subset of NFL teams account for a disproportionately large portion of contract value.
 
 ![Distribution of Free Agent Contract Value](distn_total_avgContractValue.png){width="80%"}

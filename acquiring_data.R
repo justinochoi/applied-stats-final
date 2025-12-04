@@ -131,3 +131,47 @@ test = model_df %>% filter(year == 2024)
 # save the data 
 saveRDS(train, "training_data.rds") 
 saveRDS(test, "test_data.rds")
+
+
+##############################################
+# additional visuals for EDA/report purposes
+##############################################
+
+# dist'n of positions of first round draft picks
+pos_counts <- table(data$position)
+pos_counts <- sort(pos_counts, decreasing = TRUE)
+
+pos_df <- data.frame(
+  position = names(pos_counts),
+  count = as.vector(pos_counts),
+  row.names = NULL
+)
+
+ggplot(pos_df, aes(x = reorder(position, -count), y = count)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(
+    title = "Distribution of Drafted Positions (First-Round Picks)",
+    x = "Position",
+    y = "Number of Draft Selections"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+# here we see that WR and QB positions are most popular/overrepresented
+
+
+
+#dist'n of free agent contract dollar value
+ggplot(signings_by_team, aes(x = total_apy)) +
+  geom_histogram(bins = 30, fill = "seagreen", color = "white") +
+  labs(
+    title = "Distribution of Total Free-Agent Spending (2016–2024)",
+    x = "Total Contract Value (APY Sum)",
+    y = "Number of Team-Seasons"
+  ) +
+  theme_minimal()
+
+# trying to figure out if each team only gets 1 first round draft pick per season 
+print(n=40, data[data$year == 2024, c("year", "Tm", "position")])
+
+table(paste(data$year, data$Tm)) |> sort(decreasing = TRUE) # no duplicates for any team is good
+

@@ -123,3 +123,5 @@ gp_results = tibble(
 ggplot(gp_results, aes(x=preds, y=actual)) + 
   geom_point() + 
   geom_abline(slope = 1, linetype = "dashed", color = "red")
+
+saveRDS(fit_gp, "gp_mod.rds") 

@@ -3,10 +3,15 @@ title: "NFL Win Projections: Bigger and Better"
 subtitle: "December 4th, 2025"
 author: "Justin Choi, Tengis Kelley, Heidi Tamm" 
 output: pdf_document 
-editor_options: 
-  markdown: 
-    wrap: 72
 ---
+
+```{r}
+library(tidyverse) 
+library(lme4) 
+
+train = readRDS("training_data.rds") 
+test = readRDS("test_data.rds")
+```
 
 # 1. Introduction 
 
@@ -18,67 +23,140 @@ We first discuss how we collected necessary data. We then show that knowing whic
 
 # 3. Modeling 
 
-# 3.1 Baseline Model 
+In this section, we introduce four models that will be the basis of our analysis. 
+
+## 3.1 Baseline Model 
+
+We wanted to start off my establishing a **baseline** model, a starting point from which we can improve on. We'll use the model that returned the best predictions from our previous report: a simple binomial model with three terms: an intercept, the previous season's point differential, and a team random effect: 
 
 $$
 \begin{aligned}
 W_i &\sim \text{Binomial}(G_i, p_i) \\
-\text{logit}(\mu_i) &= \beta_0 + \beta_1 \cdot \text{PD_past_1}_i + u_{Tm[i]} \\
-u_{\text{Tm}[i]} &\sim \mathcal{N}(0, \sigma^2) \\
+\text{logit}(p_i) &= \beta_0 + \beta_1 \cdot \text{Past PD}_i + u_{Tm[i]} \\
+u_{\text{Tm}[i]} &\sim \mathcal{N}(0, \sigma^2)
 \end{aligned}
 $$
 
-# 3.2 Adding New Information 
+The model was implemented using the lme4 package in R: 
 
-$$
-\begin{aligned}
-W_i &\sim \text{Binomial}(G_i, p_i) \\
-\text{logit}(\mu_i) &= \beta_0 + \beta_1 \cdot \text{PD_past_1}_i + \beta_2 \cdot \text{max_apy}_i 
-+ \beta_3 \cdot \text{pick}_i + \sum_{j=1}^{J} \beta_j \cdot \text{position}_{ij} + u_{Tm[i]} \\
-u_{\text{Tm}[i]} &\sim \mathcal{N}(0, \sigma^2) \\
-\end{aligned}
-$$
-
-
-# 3.3 Bayesian Beta-Binomial 
-$$
-\begin{aligned}
-W_i &\sim \text{Beta-Binomial}(G_i, p_i, \phi) \\
-\text{logit}(\mu_i) &= \beta_0 + \beta_1 \cdot \text{PD_past_1}_i + \beta_2 \cdot \text{max_apy}_i 
-+ \beta_3 \cdot \text{pick}_i + \sum_{j=1}^{J} \beta_j \cdot \text{position}_{ij} + u_{Tm[i]} \\
-u_{\text{Tm}[i]} &\sim \mathcal{N}(0, \sigma^2) \\
-\phi &\sim \text{Exponential}(0.1) \\
-\beta_0 &\sim \mathcal{N}(0, 0.25) \\
-\beta_1 &\sim \mathcal{N}(0, 4) \\
-\sigma &\sim \text{Exponential}(1)
-\end{aligned}
-$$
-
-# 3.4 Gaussian Process Regression 
-
-$$
-\begin{aligned}
-W_i &\sim \text{Binomial}(G_i, p_i), \\[4pt]
-\text{logit}(p_i) &= \beta_0 + g_{\text{Tm}_i}(\text{year}_t) + u_{\text{Tm}[i]}, \\[6pt]
-\beta_0 &\sim \mathcal{N}(0, 0.25), \\[6pt]
-g_t(\cdot) &\sim \text{GP}\!\left(0, \, k_t(\cdot,\cdot)\right), \\[6pt]
-u_{\text{Tm}[i]} &\sim \mathcal{N}(0, \sigma^2), \\[6pt]
-\sigma &\sim \text{Exponential}(1).
-\end{aligned}
-$$
-
-Now it's time to put our new data to the test. We will train models on NFL regular-season data from 2016-23, in an attempt to predict 2024 NFL regular-seasons wins for each team.
-
-We wanted to start off my establishing a **baseline** model, a starting point from which we can improve on. We'll use the model that returned the best predictions from our previous report: a simple binomial model with three terms: an intercept, the previous season's point differential, and a team random effect. The model was specified using the lme4 R package: 
-
-```{r, eval=FALSE}
+```{r}
 baseline = glmer(
   cbind(W, L) ~ prior_PD + (1 | Tm), 
   data = train, family = binomial(link = "logit")
 )
 ```
 
-A summary of the model is provided below: 
+## 3.2 Adding New Information 
+
+Next, we keep the same model structure, but incorporate the additional information that we discussed in the previous section: 
+
+$$
+\begin{aligned}
+W_i &\sim \text{Binomial}(G_i, p_i) \\
+\text{logit}(p_i) &= \beta_0 + \beta_1 \cdot \text{Past PD}_i + \beta_2 \cdot \text{Max APY}_i \\
+&+ \beta_3 \cdot \text{pick}_i + \sum_{j=1}^{J} \beta_j \cdot \text{Position}_{ij} + u_{Tm[i]} \\
+u_{\text{Tm}[i]} &\sim \mathcal{N}(0, \sigma^2) \\
+\end{aligned}
+$$
+
+Again, we use the lme4 package: 
+
+```{r}
+sign_lmer = glmer(
+  cbind(W, L) ~ max_apy + prior_PD + pick + category + (1 | Tm), 
+  data = train, family = binomial(link = "logit")
+)
+```
+
+## 3.3 Bayesian Beta-Binomial 
+
+This time, we'll keep the covariates the same, but change the model structure. From past experience, we know that NFL regular season win totals are overdispered. Even though a Binomial and Beta-Binomial distribution will give you very similar means, it might be a good idea to use the latter to better account for the variance in our distribution - as we'll see later, using the Beta-Binomial significantly sharpened the model parameters. 
+
+$$
+\begin{aligned}
+W_i &\sim \text{Beta-Binomial}(G_i, p_i, \phi) \\
+\text{logit}(p_i) &= \beta_0 + \beta_1 \cdot \text{Past PD}_i + \beta_2 \cdot \text{Max APY}_i \\
+&+ \beta_3 \cdot \text{pick}_i + \sum_{j=1}^{J} \beta_j \cdot \text{Position}_{ij} + u_{Tm[i]} \\
+u_{\text{Tm}[i]} &\sim \mathcal{N}(0, \sigma^2) \\
+\phi &\sim \text{Exponential}(0.1) \\
+\beta_0 &\sim \mathcal{N}(0, 0.25) \\
+\beta_1,...,\beta_j &\sim \mathcal{N}(0, 4) \\
+\sigma &\sim \text{Exponential}(1)
+\end{aligned}
+$$
+
+This time, we'll use the brms (Bayesian Regression Modeling Software) package to implement the model. One doesn't have to be Bayesian here, but implementing a Beta-Binomial model with a random effect term is very easy using brms. We specify the priors, then write out the model formula and specifications: 
+
+```{r, eval=FALSE}
+bb_prior = bb_prior %>% 
+  mutate(
+    prior = case_when(
+      class == 'b' ~ 'normal(0,2)', 
+      class == 'Intercept' ~ 'normal(0, 0.5)', 
+      class == 'sd' ~ 'exponential(1)', 
+      class == 'phi' ~ 'exponential(0.1)'
+    )
+  )
+
+fit_bb = brm(
+  bf(
+   W | trials(G) ~ prior_PD + category + pick + max_apy + (1 | Tm) 
+  ), 
+  data = train, family = beta_binomial, 
+  prior = bb_prior, 
+  cores = 4, chains = 4, 
+  warmup = 1000, iter = 2500, seed = 76,
+  control = list(adapt_delta = 0.95, max_treedepth = 15)
+)
+```
+
+## 3.4 Gaussian Process Regression 
+
+Lastly, we fit a Gaussian Process (GP) regression as suggested by Dr. Guinness. The idea here is that, intuitively, the team random effect shouldn't be constant from 2016 to 2023, but rather change over time. With the exception of a few dynasties (or those who "tank" for higher draft picks), teams' performances are cylical. Good teams become bad, then become good again. We believe that a GP is suitable to capture the non-linear cylical nature of team performances in the NFL. Mathematically, our model looks like this: 
+
+$$
+\begin{aligned}
+W_i &\sim \text{Binomial}(G_i, p_i), \\[4pt]
+\text{logit}(p_i) &= \beta_0 + g_i(\text{Year}_t) + u_{\text{Tm}[i]}, \\[6pt]
+\beta_0 &\sim \mathcal{N}(0, 0.25), \\[6pt]
+g_i(\cdot) &\sim \text{GP}\!\left(0, \, k(\cdot,\cdot)\right), \\[6pt]
+u_{\text{Tm}[i]} &\sim \mathcal{N}(0, \sigma^2), \\[6pt]
+\sigma &\sim \text{Exponential}(1)
+\end{aligned}
+$$
+
+You may notice that there are no fixed-effect covariates. As we'll discuss later, adding free agent and draft information actually degraded the performance of the GP. 
+
+Once again, we use brms to fit the model: 
+
+```{r, eval=FALSE}
+gp_prior = gp_prior %>% 
+  mutate(
+    prior = case_when(
+      class == 'b' ~ 'normal(0,2)', 
+      class == 'Intercept' ~ 'normal(0, 0.5)', 
+      class == 'sd' ~ 'exponential(1)', 
+      TRUE ~ prior
+    )
+  )
+
+fit_gp = brm(
+  bf(
+    W | trials(G) ~ gp(year, by = Tm, k = 5) + (1 | Tm)
+  ), 
+  data = train, family = binomial, 
+  prior = gp_prior, 
+  cores = 4, chains = 4, 
+  warmup = 1000, iter = 2500, seed = 76,
+  control = list(adapt_delta = 0.95, max_treedepth = 15)
+)
+```
+
+Instead of a full GP, which is computationally prohibitive, we use a Hilbert Spline approximation. By specifing k = 5, we tell brms that we want a five-dimensional basis of smooth splines to approximate the true underlying GP. The computational time and cost increases along with k; we found that k = 5 was sufficient to produce reliable results. Note that we're specifying a GP for each team, which reflects that a team like the Chiefs are less prone to year-to-year fluctuations compared to, say, the Titans. To capture the remaining variance, we also specify a random effect at the team level. 
+
+# 4. Results
+
+# 4.1 Model Summaries and Diagnostics 
 
 ```{r}
 summary(baseline)
@@ -97,21 +175,11 @@ sqrt(mean((test$W - base_wins)^2)) # 3.4
 
 The results are pretty decent - on average, we're around 3 wins away from the true 2024 win totals. The RMSE is slightly higher than the MAE, in part because the 2024 NFL season seemed to feature a good number of unexpected outcomes (for example, the Washington Commanders going from a 4-13 record in 2023 to a 12-5 record in 2024). 
 
-Next, we'll keep the same model structure, but add our free agent and draft-related covariates: 
-
-```{r}
-sign_lmer = glmer(
-  cbind(W, L) ~ max_apy + prior_PD + pick + category + (1 | Tm), 
-  data = train, family = binomial(link = "logit")
-)
+```{r, echo=FALSE}
 summary(sign_lmer) 
 ```
 
-As expected, a higher max_apy corresponds to a greater win probability the following season. Prior point differential largely maintains its influence, while surprisingly, the draft pick number is almost completely uninformative. Also surprising is first-round running backs (categoryRB) giving their new teams a noticeable boost to their win totals, but other positions not contributing much. Before running the model, we expected the quarterback position to have a similar impact. Perhaps there are far more rookie quarterbacks who flame out than dominate the league a là Tom Brady or Patrick Mahomes. 
-
-# 4. Results
-
-# 4.1 Model Summaries and Diagnostics 
+As expected, big free agent contracts. corresponds to a greater win probability the following season. Prior point differential largely maintains its influence, while surprisingly, the draft pick number is almost completely uninformative. Also surprising is first-round running backs (categoryRB) giving their new teams a noticeable boost to their win totals, but other positions not contributing much. Before running the model, we expected the quarterback position to have a similar impact. Perhaps there are far more rookie quarterbacks who flame out than dominate the league a là Tom Brady or Patrick Mahomes. 
 
 # 4.2 Predictive Capability 
 
